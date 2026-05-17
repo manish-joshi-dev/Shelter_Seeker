@@ -1,4 +1,5 @@
 import TrustSystemService from '../services/trustSystem.service.js';
+import logAdminAudit from '../services/adminAudit.service.js';
 import User from '../model/user.model.js';
 import { errorHandler } from '../utils/error.js';
 
@@ -38,6 +39,21 @@ export const updateTrustPoints = async (req, res, next) => {
         if (!result.success) {
             return next(errorHandler(500, result.error));
         }
+
+        await logAdminAudit({
+            req,
+            action: 'UPDATE_TRUST_POINTS',
+            targetType: 'user',
+            targetId: id,
+            targetName: user.username,
+            metadata: {
+                trustAction: action,
+                pointsRequested: points,
+                oldPoints: user.trustPoints,
+                newPoints: result.user.trustPoints,
+                reason: reason || null,
+            },
+        });
 
         res.status(200).json({
             success: true,
@@ -130,10 +146,27 @@ export const autoUpdateSeller = async (req, res, next) => {
         }
 
         // Recalculate rating and verification status
+        const oldRating = user.rating;
+        const oldVerifiedSeller = user.verifiedSeller;
         user.rating = Math.min(5, Math.max(0, parseFloat((user.trustPoints / 20).toFixed(1))));
         user.verifiedSeller = user.trustPoints >= 60;
         
         await user.save();
+
+        await logAdminAudit({
+            req,
+            action: 'AUTO_UPDATE_SELLER_STATUS',
+            targetType: 'user',
+            targetId: id,
+            targetName: user.username,
+            metadata: {
+                trustPoints: user.trustPoints,
+                oldRating,
+                newRating: user.rating,
+                oldVerifiedSeller,
+                newVerifiedSeller: user.verifiedSeller,
+            },
+        });
 
         res.status(200).json({
             success: true,
@@ -214,6 +247,23 @@ export const batchUpdateTrustPoints = async (req, res, next) => {
         if (!result.success) {
             return next(errorHandler(500, result.error));
         }
+
+        await logAdminAudit({
+            req,
+            action: 'BATCH_UPDATE_TRUST_POINTS',
+            targetType: 'user',
+            targetName: `${updates.length} users`,
+            metadata: {
+                totalUpdatesRequested: updates.length,
+                successfulUpdates: result.results.filter((entry) => entry.success).length,
+                failedUpdates: result.results.filter((entry) => !entry.success).length,
+                updates: updates.map((update) => ({
+                    userId: update.userId,
+                    actionType: update.actionType,
+                    customReason: update.customReason || null,
+                })),
+            },
+        });
 
         res.status(200).json({
             success: true,

@@ -2,10 +2,10 @@ import axios from 'axios';
 
 class FraudDetectionService {
     constructor() {
-        this.fraudDetectionUrl = process.env.FRAUD_DETECTION_URL || 'http://localhost:5005';
+        this.fraudDetectionUrl = 'http://localhost:5005';
         this.timeout = 10000;
     }
-
+            
     async detectFraud(listingData) {
         try {
             const { regularPrice, discountPrice, bedRooms, address } = listingData;

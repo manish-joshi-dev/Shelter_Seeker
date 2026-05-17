@@ -5,11 +5,9 @@ import { useState,useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
-// import  from 'redux-persist/es/storage/getStorage';
-import {ref,uploadBytesResumable,getStorage,getDownloadURL} from 'firebase/storage'
-import { app } from '../firebase';
 import { updateUserSuccess,updateUserFailure,updateUserStart,deleteUserFailure,deleteUserStart,deleteUserSuccess,signOutUserStart,signOutUserFailure,signOutUserSuccess } from '../redux/user/userSlice';
 import { persistor } from '../redux/store';
+import { uploadImageToCloudinary } from '../utils/cloudinaryUpload';
 
 function profile() {
   const {curUser,loading,error} = useSelector((state)=>state.user);
@@ -34,41 +32,26 @@ function profile() {
 
 
   
-  //Firebase storage
-  // allow read;
-  //     allow write: if 
-  //     request.resource.size < 2*1024*1024 && 
-  //     request.resource.contentType.matches('image/.*')
   useEffect(()=>{
     if(file) {
       handleFileUpload(file);
     }
   },[file])
 
-  const handleFileUpload = (file)=>{
-    const storage = getStorage(app);
-    const fileName = new Date().getTime() + file.name;
-    const storageRef = ref(storage,fileName);
-    const uploadTask = uploadBytesResumable(storageRef,file);
-
-    uploadTask.on(
-      'state_changed',(snapshot)=>{
-        const progress = (snapshot.bytesTransferred/snapshot.totalBytes)*100;
-        console.log('Upload is '+progress+'% done');
-        setFilePerc(Math.round(progress));
-        // console.log(filePerc);
-
-      },
-      (error)=>{
-        setFileErrorUpload(true);
-      },
-      ()=> {
-        getDownloadURL(uploadTask.snapshot.ref).then((downloadURL)=>{
-          SetFormData({...formData,avatar:downloadURL});
-        })
-      }
-
-    );
+  const handleFileUpload = async (file)=>{
+    try {
+      setFilePerc(1);
+      setFileErrorUpload(false);
+      const downloadURL = await uploadImageToCloudinary(file, {
+        folder: "shelter-seeker/avatars",
+      });
+      SetFormData((prev) => ({ ...prev, avatar: downloadURL }));
+      setFilePerc(100);
+    } catch (error) {
+      console.error("Cloudinary upload failed:", error);
+      setFileErrorUpload(true);
+      setFilePerc(0);
+    }
   }
   const handleChange = (e)=>{
     // console.log(e.target.value);

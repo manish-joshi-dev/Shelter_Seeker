@@ -1,11 +1,11 @@
-import React, { useState } from "react";
-import { app } from "../firebase";
+import { useState } from "react";
 import { useSelector } from "react-redux";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { useNavigate } from "react-router-dom";
 import LocalityInsightsForm from "../components/LocalityInsightsForm";
 import FraudDetectionBadge from "../components/FraudDetectionBadge";
 import MapPickerOSM from "../components/MapPickerOSM";
+import { uploadImageToCloudinary } from "../utils/cloudinaryUpload";
+
 
 export default function CreateListing() {
   const { curUser } = useSelector((state) => state.user);
@@ -58,7 +58,7 @@ export default function CreateListing() {
         })
         .catch((err) => {
           console.error("Upload error:", err);
-          setImageUploadError("Image upload failed (2 MB max per image)");
+          setImageUploadError(err.message || "Image upload failed");
           setUploading(false);
         });
     } else {
@@ -67,26 +67,8 @@ export default function CreateListing() {
   };
 
   const storeImage = async (file) => {
-    return new Promise((resolve, reject) => {
-      const storage = getStorage(app);
-      const fileName = new Date().getTime() + "_" + file.name;
-      const storageRef = ref(storage, fileName);
-      const uploadTask = uploadBytesResumable(storageRef, file);
-
-      uploadTask.on(
-        "state_changed",
-        (snapshot) => {
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          // Optional: show progress
-          // console.log("Upload is " + progress + "% done");
-        },
-        (error) => reject(error),
-        () => {
-          getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-            resolve(downloadURL);
-          }).catch(reject);
-        }
-      );
+    return uploadImageToCloudinary(file, {
+      folder: "shelter-seeker/listings",
     });
   };
 
@@ -120,6 +102,8 @@ export default function CreateListing() {
         body: JSON.stringify({
           ...formData,
           userRef: curUser._id,
+          sellerInsight: localityInsights,
+          localityName,
         }),
       });
 
@@ -144,7 +128,7 @@ export default function CreateListing() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               listingId: data._id,
-              sellerInsights: localityInsights,
+              sellerInsight: localityInsights,
               localityName,
             }),
           });

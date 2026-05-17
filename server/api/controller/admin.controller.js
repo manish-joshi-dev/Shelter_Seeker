@@ -2,26 +2,8 @@ import User from "../model/user.model.js";
 import Listing from "../model/listing.model.js";
 import Report from "../model/report.model.js";
 import AdminActivity from "../model/adminActivity.model.js";
+import logAdminAudit from "../services/adminAudit.service.js";
 import { errorHandler } from "../utils/error.js";
-
-// Helper function to log admin activity
-const logAdminActivity = async (adminId, adminName, action, targetType, targetId, targetName, details, req) => {
-    try {
-        await AdminActivity.create({
-            adminId,
-            adminName,
-            action,
-            targetType,
-            targetId,
-            targetName,
-            details,
-            ipAddress: req.ip || req.connection.remoteAddress,
-            userAgent: req.get('User-Agent'),
-        });
-    } catch (error) {
-        console.error('Error logging admin activity:', error);
-    }
-};
 
 // ==================== USER MANAGEMENT ====================
 
@@ -90,16 +72,18 @@ export const toggleUserBan = async (req, res, next) => {
         await user.save();
 
         // Log activity
-        await logAdminActivity(
-            req.user.id,
-            req.user.username,
-            user.isBanned ? 'user_ban' : 'user_unban',
-            'user',
-            userId,
-            user.username,
-            { banReason, wasBanned },
-            req
-        );
+        await logAdminAudit({
+            req,
+            action: user.isBanned ? 'BAN_USER' : 'UNBAN_USER',
+            targetType: 'user',
+            targetId: userId,
+            targetName: user.username,
+            metadata: {
+                wasBanned,
+                isBanned: user.isBanned,
+                banReason: user.banReason,
+            },
+        });
 
         res.status(200).json({
             message: `User ${user.isBanned ? 'banned' : 'unbanned'} successfully`,
@@ -147,16 +131,19 @@ export const updateTrustPoints = async (req, res, next) => {
         await user.save();
 
         // Log activity
-        await logAdminActivity(
-            req.user.id,
-            req.user.username,
-            action === 'add' ? 'user_trust_points_add' : 'user_trust_points_remove',
-            'user',
-            userId,
-            user.username,
-            { oldPoints, newPoints, pointsChanged: points },
-            req
-        );
+        await logAdminAudit({
+            req,
+            action: 'UPDATE_TRUST_POINTS',
+            targetType: 'user',
+            targetId: userId,
+            targetName: user.username,
+            metadata: {
+                changeType: action,
+                oldPoints,
+                newPoints,
+                pointsChanged: points,
+            },
+        });
 
         res.status(200).json({
             message: `Trust points ${action === 'add' ? 'added' : 'removed'} successfully`,
@@ -193,16 +180,17 @@ export const changeUserRole = async (req, res, next) => {
         await user.save();
 
         // Log activity
-        await logAdminActivity(
-            req.user.id,
-            req.user.username,
-            'user_role_change',
-            'user',
-            userId,
-            user.username,
-            { oldRole, newRole: role },
-            req
-        );
+        await logAdminAudit({
+            req,
+            action: 'CHANGE_USER_ROLE',
+            targetType: 'user',
+            targetId: userId,
+            targetName: user.username,
+            metadata: {
+                oldRole,
+                newRole: role,
+            },
+        });
 
         res.status(200).json({
             message: 'User role updated successfully',
@@ -284,16 +272,18 @@ export const updateListingStatus = async (req, res, next) => {
         await listing.save();
 
         // Log activity
-        await logAdminActivity(
-            req.user.id,
-            req.user.username,
-            status === 'approved' ? 'listing_approve' : 'listing_reject',
-            'listing',
-            listingId,
-            listing.name,
-            { oldStatus, newStatus: status, rejectionReason },
-            req
-        );
+        await logAdminAudit({
+            req,
+            action: status === 'approved' ? 'APPROVE_LISTING' : 'REJECT_LISTING',
+            targetType: 'listing',
+            targetId: listingId,
+            targetName: listing.name,
+            metadata: {
+                oldStatus,
+                newStatus: status,
+                rejectionReason: listing.rejectionReason,
+            },
+        });
 
         res.status(200).json({
             message: `Listing ${status} successfully`,
@@ -322,16 +312,16 @@ export const deleteListing = async (req, res, next) => {
         await Listing.findByIdAndDelete(listingId);
 
         // Log activity
-        await logAdminActivity(
-            req.user.id,
-            req.user.username,
-            'listing_delete',
-            'listing',
-            listingId,
-            listing.name,
-            { deletedBy: req.user.username },
-            req
-        );
+        await logAdminAudit({
+            req,
+            action: 'DELETE_LISTING',
+            targetType: 'listing',
+            targetId: listingId,
+            targetName: listing.name,
+            metadata: {
+                deletedBy: req.user.username,
+            },
+        });
 
         res.status(200).json({
             message: 'Listing deleted successfully'
@@ -398,16 +388,24 @@ export const updateReportStatus = async (req, res, next) => {
         await report.save();
 
         // Log activity
-        await logAdminActivity(
-            req.user.id,
-            req.user.username,
-            `report_${status}`,
-            'report',
-            reportId,
-            `Report for ${report.listingId}`,
-            { oldStatus, newStatus: status, adminNotes },
-            req
-        );
+        const reportActions = {
+            reviewed: 'REVIEW_REPORT',
+            resolved: 'RESOLVE_REPORT',
+            dismissed: 'DISMISS_REPORT',
+        };
+
+        await logAdminAudit({
+            req,
+            action: reportActions[status],
+            targetType: 'report',
+            targetId: reportId,
+            targetName: `Report for ${report.listingId}`,
+            metadata: {
+                oldStatus,
+                newStatus: status,
+                adminNotes: report.adminNotes,
+            },
+        });
 
         res.status(200).json({
             message: `Report ${status} successfully`,
@@ -501,7 +499,7 @@ export const getActivityLogs = async (req, res, next) => {
         if (adminId) query.adminId = adminId;
 
         const activities = await AdminActivity.find(query)
-            .sort({ createdAt: -1 })
+            .sort({ timestamp: -1, createdAt: -1 })
             .limit(limit * 1)
             .skip((page - 1) * limit);
 

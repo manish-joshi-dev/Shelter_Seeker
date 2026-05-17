@@ -20,7 +20,7 @@ const LocalityInsightsForm = ({ onInsightsChange, initialInsights = null }) => {
   });
 
   const [localityName, setLocalityName] = useState('');
-
+                    
   const categories = [
     { key: 'waterSupply', name: 'Water Supply', icon: FaWater, color: 'text-blue-600' },
     { key: 'powerSupply', name: 'Power Supply', icon: FaBolt, color: 'text-yellow-600' },
@@ -30,7 +30,15 @@ const LocalityInsightsForm = ({ onInsightsChange, initialInsights = null }) => {
     { key: 'dailyNeeds', name: 'Daily Needs', icon: FaShoppingCart, color: 'text-orange-600' },
   ];
 
-  const ratings = ['Good', 'Average', 'Poor'];
+  const ratings = ['Excellent', 'Good', 'Average', 'Poor', 'Very Poor'];
+
+  const ratingButtonStyles = {
+    Excellent: 'bg-emerald-100 text-emerald-800',
+    Good: 'bg-lime-100 text-lime-800',
+    Average: 'bg-yellow-100 text-yellow-800',
+    Poor: 'bg-orange-100 text-orange-800',
+    'Very Poor': 'bg-red-100 text-red-800',
+  };
 
   const handleRatingChange = (category, rating) => {
     const updatedInsights = {
@@ -111,11 +119,7 @@ const LocalityInsightsForm = ({ onInsightsChange, initialInsights = null }) => {
                       onClick={() => handleRatingChange(category.key, rating)}
                       className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
                         insights[category.key].rating === rating
-                          ? rating === 'Good'
-                            ? 'bg-green-100 text-green-800'
-                            : rating === 'Average'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-red-100 text-red-800'
+                          ? ratingButtonStyles[rating]
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
                     >

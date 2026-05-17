@@ -16,7 +16,7 @@ function MyChats() {
   const [sending, setSending] = useState(false)
   const [typingUsers, setTypingUsers] = useState({}) // conversationId -> userId -> isTyping
 
-  const socketRef = useRef(null)
+  const socketRef = useRef(null);
 
   const activeConversation = useMemo(() => items.find((c) => c.conversationId === activeCid) || null, [items, activeCid])
 
@@ -24,7 +24,7 @@ function MyChats() {
   useEffect(() => {
     if (!curUser) return
 
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:8000', {
+    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3001', {
       withCredentials: true,
       query: { userId: curUser._id },
     })

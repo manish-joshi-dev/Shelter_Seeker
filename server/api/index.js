@@ -1,6 +1,8 @@
 import express from "express"
 import mongoose from "mongoose"
 import dotenv from "dotenv"
+import path from "path"
+import { fileURLToPath } from "url"
 import userRouter from "../api/routes/user.route.js"
 import userAuth from "../api/routes/auth.route.js"
 import userListing from "../api/routes/listing.route.js"
@@ -9,16 +11,21 @@ import localityInsightRoutes from "../api/routes/localityInsight.route.js"
 import adminRoutes from "../api/routes/admin.route.js"
 import reportRoutes from "../api/routes/report.route.js"
 import trustRoutes from "../api/routes/trust.route.js"
+import uploadRoutes from "../api/routes/upload.route.js"
 import cookieParser from "cookie-parser"
 import cors from "cors";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
 import Conversation from "../api/model/conversation.model.js";
+import { getLocalityName } from "./utils/locality.js"
 
 
 
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 
 
@@ -31,8 +38,8 @@ mongoose.connect(process.env.MONGO).then(()=>{
 })
 const app = express();
 
-const port = 3000;
-app.use(express.json());
+const port = 3001;
+app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 // Allow multiple origins for development
 const allowedOrigins = [
@@ -71,7 +78,9 @@ app.use('/api/locality-insights',localityInsightRoutes);
 app.use('/api/admin',adminRoutes);
 app.use('/api/reports',reportRoutes);
 app.use('/api/trust',trustRoutes);
+app.use('/api/upload',uploadRoutes);
 
+// console.log(await getLocalityName([80.402052, 22.617726])+ " it is ");
 app.use((err,req,res,next)=>{
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';

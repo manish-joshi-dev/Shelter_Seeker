@@ -2,40 +2,133 @@ import Listing from "../model/listing.model.js"
 import TrustSystemService from "../services/trustSystem.service.js";
 import FraudDetectionService from "../services/fraudDetection.service.js";
 import { errorHandler } from "../utils/error.js";
-import LocalityInsights from "../model/localityInsight.model.js";
+import redis from "../../redis.js";
+import { computeGeohash, getLocalityName, recomputeLocalityRatings } from '../utils/locality.js';
+import Locality from '../model/locality.model.js';
 
-export const createListing = async(req,res,next)=>{
+
+// export const createListing = async(req,res,next)=>{
+//     try {
+//         console.log(req.body);
+        
+//         // Validate required fields
+//         const requiredFields = ['name', 'description', 'address', 'regularPrice', 'discountPrice', 'bedRooms', 'washrooms', 'furnished', 'parking', 'type', 'offer', 'imageUrls', 'userRef'];
+//         for (const field of requiredFields) {
+//             if (req.body[field] === undefined || req.body[field] === null || req.body[field] === '') {
+//                 return next(errorHandler(400, `Missing required field: ${field}`));
+//             }
+//         }
+        
+//         // Convert type from 'sell' to 'sale' if needed
+//         if (req.body.type === 'sell') {
+//             req.body.type = 'sale';
+//         }
+        
+//         // Perform fraud detection before creating the listing
+//         console.log('Starting fraud detection for new listing...');
+//         const fraudDetectionResult = await FraudDetectionService.detectFraud(req.body);
+        
+//         // Add fraud detection results to the listing data
+//         req.body.fraudDetection = fraudDetectionResult;
+        
+//         const listing = await Listing.create(req.body);
+//         const locality = await LocalityInsights.create({
+//             listingId: listing._id,
+//             address: req.body.address,
+//             createdAt: new Date()
+//         });
+        
+//         // Update trust points for listing creation
+//         try {
+//             await TrustSystemService.updateTrustPoints(
+//                 req.body.userRef,
+//                 'LISTING_CREATED',
+//                 null,
+//                 'Property listing created'
+//             );
+//         } catch (trustError) {
+//             console.error('Error updating trust points for listing creation:', trustError);
+//             // Don't fail the listing creation if trust update fails
+//         }
+        
+//         console.log('Listing created with fraud detection:', {
+//             listingId: listing._id,
+//             fraudScore: fraudDetectionResult.fraudScore,
+//             isFraudulent: fraudDetectionResult.isFraudulent
+//         });
+        
+//         return res.status(201).json({listing,fraudDetection: fraudDetectionResult});
+//     } catch (error) {
+//         console.error('Error creating listing:', error);
+//         next(error);
+//     }
+// }
+
+
+
+export const createListing = async (req, res, next) => {
     try {
         console.log(req.body);
-        
+
         // Validate required fields
-        const requiredFields = ['name', 'description', 'address', 'regularPrice', 'discountPrice', 'bedRooms', 'washrooms', 'furnished', 'parking', 'type', 'offer', 'imageUrls', 'userRef'];
+        const requiredFields = ['name', 'description', 'address', 'regularPrice',
+            'discountPrice', 'bedRooms', 'washrooms', 'furnished', 'parking',
+            'type', 'offer', 'imageUrls', 'userRef'];
         for (const field of requiredFields) {
             if (req.body[field] === undefined || req.body[field] === null || req.body[field] === '') {
                 return next(errorHandler(400, `Missing required field: ${field}`));
             }
         }
-        
-        // Convert type from 'sell' to 'sale' if needed
-        if (req.body.type === 'sell') {
-            req.body.type = 'sale';
+
+        if (req.body.type === 'sell') req.body.type = 'sale';
+
+        // ── STEP 1: compute geohash and locality name ──────────
+        const coordinates = req.body.location?.coordinates;
+
+        if (!coordinates || coordinates.length < 2) {
+            return next(errorHandler(400, 'Missing location coordinates'));
         }
-        
-        // Perform fraud detection before creating the listing
-        console.log('Starting fraud detection for new listing...');
+
+        const geohash = computeGeohash(coordinates);
+        console.log("hi the cods are:"+coordinates);
+        const localityName = await getLocalityName(coordinates);
+        console.log("hi the" + localityName);
+        // attach to req.body so they get saved on the listing
+        req.body.geohash = geohash;
+        req.body.localityName = localityName;
+
+        console.log(`Geohash: ${geohash}, Locality: ${localityName}`);
+        // ───────────────────────────────────────────────────────
+
+        // fraud detection
+        console.log('Starting fraud detection...');
         const fraudDetectionResult = await FraudDetectionService.detectFraud(req.body);
-        
-        // Add fraud detection results to the listing data
         req.body.fraudDetection = fraudDetectionResult;
-        
+
+        // create the listing
         const listing = await Listing.create(req.body);
-        const locality = await LocalityInsights.create({
-            listingId: listing._id,
-            address: req.body.address,
-            createdAt: new Date()
-        });
-        
-        // Update trust points for listing creation
+
+        // ── STEP 2: upsert Locality document ───────────────────
+        // if Locality for this locality already exists → update it
+        // if not → create it
+        const locality = await Locality.findOneAndUpdate(
+            { localityName },
+            {
+                $addToSet: { geohashes: geohash },
+                $set: { city: req.body.address },
+                $inc: { totalListings: 1 }
+            },
+            { upsert: true, new: true }
+        );
+
+        if (req.body.sellerInsight) {
+            recomputeLocalityRatings(localityName);
+        }
+
+        console.log(locality);
+        // ───────────────────────────────────────────────────────
+
+        // trust points
         try {
             await TrustSystemService.updateTrustPoints(
                 req.body.userRef,
@@ -44,22 +137,23 @@ export const createListing = async(req,res,next)=>{
                 'Property listing created'
             );
         } catch (trustError) {
-            console.error('Error updating trust points for listing creation:', trustError);
-            // Don't fail the listing creation if trust update fails
+            console.error('Trust points error:', trustError);
         }
-        
-        console.log('Listing created with fraud detection:', {
+
+        console.log('Listing created:', {
             listingId: listing._id,
+            geohash,
+            localityName,
             fraudScore: fraudDetectionResult.fraudScore,
-            isFraudulent: fraudDetectionResult.isFraudulent
         });
-        
-        return res.status(201).json(listing);
+
+        return res.status(201).json({ listing, fraudDetection: fraudDetectionResult });
+
     } catch (error) {
         console.error('Error creating listing:', error);
         next(error);
     }
-}
+};
 
 export const deleteListing = async(req,res,next)=>{
     const listing = await Listing.findById(req.params.id);
@@ -101,56 +195,108 @@ export const getListing = async(req,res,next)=>{
     }
 
 }
-export const getListings = async(req,res,next)=>{
+// export const getListings = async(req,res,next)=>{
 
-    try {
-        const limit = parseInt(req.query.limit) || 9;
-        const startIndex = parseInt(req.query.startIndex) || 0;
+//     try {
+//         const limit = parseInt(req.query.limit) || 9;
+//         const startIndex = parseInt(req.query.startIndex) || 0;
        
-        let offer = req.query.offer;
+//         let offer = req.query.offer;
 
-        if (offer === undefined || offer === 'false') {
-          offer = { $in: [false, true] };
-        }
-        let furnished = req.query.furnished;
+//         if (offer === undefined || offer === 'false') {
+//           offer = { $in: [false, true] };
+//         }
+//         let furnished = req.query.furnished;
 
-    if (furnished === undefined || furnished === 'false') {
-      furnished = { $in: [false, true] };
+//     if (furnished === undefined || furnished === 'false') {
+//       furnished = { $in: [false, true] };
+//     }
+
+//     let parking = req.query.parking;
+
+//     if (parking === undefined || parking === 'false') {
+//       parking = { $in: [false, true] };
+//     }
+//     let type = req.query.type;
+
+//     if (type === undefined || type === 'all') {
+//       type = { $in: ['sale', 'rent'] };
+//     }
+//     const searchTerm = req.query.searchTerm || '';
+
+//     const sort = req.query.sort || 'createdAt';
+
+//     const order = req.query.order || 1;
+
+//     const listings = await Listing.find({
+//         name: {$regex:searchTerm,$options:'i' },
+//         offer,
+//         furnished,
+//         parking,
+//         type,
+//     }).sort({[sort]:order}).limit(limit).skip(startIndex);
+//     return res.status(200).json(listings);
+
+
+
+//     } catch (error) {
+//         next(error);
+//     }
+// }
+
+
+
+export const getListings = async (req, res, next) => {
+  try {
+    const limit       = parseInt(req.query.limit)      || 9;
+    const startIndex  = parseInt(req.query.startIndex) || 0;
+    const searchTerm  = req.query.searchTerm           || '';
+    const sort        = req.query.sort                 || 'createdAt';
+    const order       = req.query.order                || 1;
+    const offer       = req.query.offer;
+    const furnished   = req.query.furnished;
+    const parking     = req.query.parking;
+    const type        = req.query.type;
+
+    // ── Build a deterministic cache key from all query params ──
+    const cacheKey = `listings:${searchTerm}:${offer}:${furnished}:${parking}:${type}:${sort}:${order}:${limit}:${startIndex}`;
+
+    // ── Check cache first ──
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      console.log('✅ Cache HIT');
+      return res.status(200).json(JSON.parse(cached));
     }
 
-    let parking = req.query.parking;
+    console.log('❌ Cache MISS — hitting MongoDB');
 
-    if (parking === undefined || parking === 'false') {
-      parking = { $in: [false, true] };
-    }
-    let type = req.query.type;
-
-    if (type === undefined || type === 'all') {
-      type = { $in: ['sale', 'rent'] };
-    }
-    const searchTerm = req.query.searchTerm || '';
-
-    const sort = req.query.sort || 'createdAt';
-
-    const order = req.query.order || 1;
+    // ── Build MongoDB query (your original logic) ──
+    let offerQuery     = offer     === undefined || offer     === 'false' ? { $in: [false, true] } : offer;
+    let furnishedQuery = furnished === undefined || furnished === 'false' ? { $in: [false, true] } : furnished;
+    let parkingQuery   = parking   === undefined || parking   === 'false' ? { $in: [false, true] } : parking;
+    let typeQuery      = type      === undefined || type      === 'all'   ? { $in: ['sale', 'rent'] } : type;
 
     const listings = await Listing.find({
-        name: {$regex:searchTerm,$options:'i' },
-        offer,
-        furnished,
-        parking,
-        type,
-    }).sort({[sort]:order}).limit(limit).skip(startIndex);
+      name:      { $regex: searchTerm, $options: 'i' },
+      offer:     offerQuery,
+      furnished: furnishedQuery,
+      parking:   parkingQuery,
+      type:      typeQuery,
+    })
+      .sort({ [sort]: order })
+      .limit(limit)
+      .skip(startIndex);
+
+    // ── Store in Redis for 5 minutes ──
+    await redis.setex(cacheKey, 300, JSON.stringify(listings));
+
     return res.status(200).json(listings);
 
+  } catch (error) {
+    next(error);
+  }
+};
 
-
-    } catch (error) {
-        next(error);
-    }
-}
-
-// New endpoint to detect fraud for existing listings
 export const detectFraudForListing = async(req,res,next)=>{
     try {
         const listing = await Listing.findById(req.params.id);
@@ -160,7 +306,7 @@ export const detectFraudForListing = async(req,res,next)=>{
         
         // Perform fraud detection
         const fraudDetectionResult = await FraudDetectionService.detectFraud(listing);
-        
+        console.log(fraudDetectionResult);
         // Update the listing with fraud detection results
         const updatedListing = await Listing.findByIdAndUpdate(
             req.params.id,

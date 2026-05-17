@@ -16,7 +16,7 @@ function OAuth() {
             const result = await signInWithPopup(auth,provider);
             console.log('Firebase auth result:', result);
             
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
             const res = await fetch(`${backendUrl}/api/auth/google`,{
                 method:'POST',
                 headers:{

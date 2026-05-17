@@ -36,6 +36,7 @@ export default function App() {
       {/* <Route path="/profile" element={<Profile/>}></Route> */}
       <Route path='/listing/:id' element={<Lds/>} ></Route>
       <Route path='/search' element={<Search/>}></Route>
+      
       <Route element={<PrivateRoute/>}  >
         <Route path='/profile' element={<Profile/>} ></Route>
         <Route path='/listing/:id/insights' element={<LocalInsights/>} ></Route>

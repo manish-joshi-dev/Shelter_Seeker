@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -18,6 +18,7 @@ import {
   FaCheck,
   FaTimes
 } from 'react-icons/fa';
+
 
 const LocalInsights = () => {
   const { id: listingId } = useParams();
@@ -54,9 +55,20 @@ const LocalInsights = () => {
   };
 
   const ratingColors = {
+    Excellent: 'text-emerald-600 bg-emerald-100',
     Good: 'text-green-600 bg-green-100',
     Average: 'text-yellow-600 bg-yellow-100',
-    Poor: 'text-red-600 bg-red-100',
+    Poor: 'text-orange-600 bg-orange-100',
+    'Very Poor': 'text-red-600 bg-red-100',
+  };
+
+  const scoreToRating = (score) => {
+    if (score >= 4.5) return 'Excellent';
+    if (score >= 3.5) return 'Good';
+    if (score >= 2.5) return 'Average';
+    if (score >= 1.5) return 'Poor';
+    if (score >= 0) return 'Very Poor';
+    return 'Unknown';
   };
 
   useEffect(() => {
@@ -66,15 +78,17 @@ const LocalInsights = () => {
   const fetchInsights = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/locality-insights/get/${listingId}`);
-      const res1 = await fetch(`/api/locality-insights/nearby/${listingId}`);
+      console.log("hi");
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const res = await fetch(`${backendUrl}/api/locality-insights/get/${listingId}`);
+      // const res1 = await fetch(`${backendUrl}/api/locality-insights/nearby/${listingId}`);
       const data = await res.json();
-      const data1 = await res1.json();
+      // const data1 = await res1.json();
       
       console.log('Fetched insights data:', data);
-      console.log('Fetched nearby insights data:', data1);
+      // console.log('Fetched nearby insights data:', data1);
       
-      if (data.success === false || !data.insight) {
+      if (data.success === false || !data.locality) {
         // No insights found for this listing
         setInsights(null);
         setQuestions([]);
@@ -82,8 +96,8 @@ const LocalInsights = () => {
         setLoading(false);
         return;
       }
-      console.log('Setting insights:', data.insight);
-      setInsights(data.insight);
+      console.log('Setting insights:', data.locality);
+      setInsights(data.locality);
       setQuestions(data.questions || []);
       console.log('Set questions:', data.questions || []);
       setError(false);
@@ -92,31 +106,6 @@ const LocalInsights = () => {
       console.error('Error fetching insights:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleVote = async (category, voteType) => {
-    if (!curUser) {
-      alert('Please sign in to vote');
-      return;
-    }
-
-    try {
-      await fetch('/api/locality-insights/vote', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          localityInsightId: insights._id,
-          category,
-          voteType,
-        }),
-      });
-      fetchInsights(); // Refresh data
-    } catch (error) {
-      console.error('Error voting:', error);
     }
   };
 
@@ -299,62 +288,31 @@ const LocalInsights = () => {
         <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
           <h2 className="text-xl font-semibold mb-6">Locality Overview</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {!insights?.sellerInsights || Object.keys(insights.sellerInsights).length === 0 ? (
+            {!insights?.ratings || Object.keys(insights.ratings).length === 0 ? (
               <div className="col-span-full text-center py-8">
                 <FaQuestionCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600">No locality insights available yet.</p>
               </div>
             ) : (
-              Object.entries(insights.sellerInsights)
-                .filter(([key, insight]) => {
-                  const hasIcon = ratingIcons[key] !== undefined;
-                  if (!hasIcon) {
-                    console.warn(`Skipping key ${key} - no icon found`);
-                  }
-                  return hasIcon && insight && insight.rating;
-                })
+              Object.entries(insights.ratings)
+                .filter(([, insight]) => insight && (typeof insight.score === 'number' || insight.rating))
                 .map(([key, insight]) => {
-                  const Icon = ratingIcons[key];
-                  const agreeCount = insights.communityScores?.[key]?.agree || 0;
-                  const disagreeCount = insights.communityScores?.[key]?.disagree || 0;
-                  
+                  const Icon = ratingIcons[key] || FaCheck;
+                  const scoreValue = typeof insight.score === 'number' ? insight.score : null;
+                  const ratingLabel = scoreValue !== null ? scoreToRating(scoreValue) : (insight.rating || 'Unknown');
                   return (
-                  <div key={key} className="text-center">
-                    <div className={`inline-flex items-center justify-center w-12 h-12 rounded-full mb-2 ${ratingColors[insight.rating]}`}>
-                      <Icon className="h-6 w-6" />
+                    <div key={key} className="text-center p-4 border border-gray-200 rounded-lg">
+                      <div className={`mx-auto flex items-center justify-center w-12 h-12 rounded-full mb-3 ${ratingColors[ratingLabel]}`}>
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <h3 className="font-medium text-gray-900 capitalize mb-2">
+                        {key.replace(/([A-Z])/g, ' $1').trim()}
+                      </h3>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {ratingLabel}
+                      </p>
                     </div>
-                    <h3 className="font-medium text-gray-900 capitalize">
-                      {key.replace(/([A-Z])/g, ' $1').trim()}
-                    </h3>
-                    <p className={`text-sm font-medium ${ratingColors[insight.rating]}`}>
-                      {insight.rating}
-                    </p>
-                    <div className="flex justify-center space-x-1 mt-2">
-                      <button
-                        onClick={() => handleVote(key, 'agree')}
-                        className="text-green-600 hover:text-green-700"
-                        disabled={!curUser}
-                        title={!curUser ? 'Sign in to vote' : 'Agree'}
-                      >
-                        <FaThumbsUp className="h-4 w-4" />
-                      </button>
-                      <span className="text-xs text-gray-500">
-                        {agreeCount}
-                      </span>
-                      <button
-                        onClick={() => handleVote(key, 'disagree')}
-                        className="text-red-600 hover:text-red-700"
-                        disabled={!curUser}
-                        title={!curUser ? 'Sign in to vote' : 'Disagree'}
-                      >
-                        <FaThumbsDown className="h-4 w-4" />
-                      </button>
-                      <span className="text-xs text-gray-500">
-                        {disagreeCount}
-                      </span>
-                    </div>
-                  </div>
-                );
+                  );
                 })
             )}
           </div>

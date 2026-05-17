@@ -1,5 +1,15 @@
 import mongoose from 'mongoose'
 
+// ADD THIS — reusable sub-schema for seller's rating per category
+const sellerCategorySchema = new mongoose.Schema({
+    rating: {
+        type: String,
+        enum: ['Excellent', 'Good', 'Average', 'Poor', 'Very Poor'],
+        default: 'Good'
+    },
+    description: { type: String, default: '' }
+}, { _id: false });
+
 const listingSchema = new mongoose.Schema(
     {
         name:{
@@ -60,7 +70,7 @@ const listingSchema = new mongoose.Schema(
             default: 'pending',
         },
         approvedBy: {
-            type: String, // admin user ID
+            type: String,
         },
         approvedAt: {
             type: Date,
@@ -72,29 +82,16 @@ const listingSchema = new mongoose.Schema(
             type: Boolean,
             default: true,
         },
-        // Fraud detection fields
         fraudDetection: {
-            fraudScore: {
-                type: Number,
-                default: null,
-            },
-            isFraudulent: {
-                type: Boolean,
-                default: false,
-            },
-            anomalyScore: {
-                type: Number,
-                default: null,
-            },
-            detectedAt: {
-                type: Date,
-                default: null,
-            },
+            fraudScore:   { type: Number, default: null },
+            isFraudulent: { type: Boolean, default: false },
+            anomalyScore: { type: Number, default: null },
+            detectedAt:   { type: Date, default: null },
             fraudFeatures: {
-                pricePerSqm: Number,
-                areaNormalized: Number,
+                pricePerSqm:        Number,
+                areaNormalized:     Number,
                 bedroomsNormalized: Number,
-                cityTier: Number,
+                cityTier:           Number,
             },
         },
         location: {
@@ -122,11 +119,31 @@ const listingSchema = new mongoose.Schema(
                 },
             },
         ],
+
+        // ── ADDED ──────────────────────────────────────────────
+
+        // Seller fills these when creating the listing
+        sellerInsight: {
+            waterSupply: { type: sellerCategorySchema, default: () => ({}) },
+            powerSupply: { type: sellerCategorySchema, default: () => ({}) },
+            traffic:     { type: sellerCategorySchema, default: () => ({}) },
+            safety:      { type: sellerCategorySchema, default: () => ({}) },
+            schools:     { type: sellerCategorySchema, default: () => ({}) },
+            dailyNeeds:  { type: sellerCategorySchema, default: () => ({}) },
+        },
+
+        // Populated by reverse geocoding when listing is created
+        localityName: { type: String, default: '', index: true },
+
+        // Geohash cell this listing falls in (precision 6)
+        geohash: { type: String, default: '', index: true },
+
+        // ───────────────────────────────────────────────────────
     },
-    {timestamps:true}
+    { timestamps: true }
 );
 
 listingSchema.index({ location: '2dsphere' });
 
-const Listing = mongoose.model('Listing',listingSchema)
+const Listing = mongoose.model('Listing', listingSchema)
 export default Listing;

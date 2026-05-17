@@ -851,7 +851,7 @@ const AdminDashboard = () => {
                         {activityLogs.map((activity) => (
                           <tr key={activity._id}>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {activity.adminName}
+                              {activity.adminName || activity.adminId}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
@@ -859,10 +859,10 @@ const AdminDashboard = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {activity.targetName}
+                              {activity.targetName || activity.targetId || 'N/A'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {new Date(activity.createdAt).toLocaleDateString()}
+                              {new Date(activity.timestamp || activity.createdAt).toLocaleDateString()}
                             </td>
                           </tr>
                         ))}
